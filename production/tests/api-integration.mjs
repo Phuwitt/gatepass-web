@@ -1,0 +1,94 @@
+import assert from 'node:assert/strict';
+import{execFileSync}from'node:child_process';
+import fs from 'node:fs/promises';
+import {randomBytes,randomUUID,createHash} from 'node:crypto';
+import {createClient} from '@supabase/supabase-js';
+const env=Object.fromEntries((await fs.readFile('.env.local','utf8')).trim().split('\n').map(l=>[l.slice(0,l.indexOf('=')),l.slice(l.indexOf('=')+1)]));
+const db=createClient(env.SUPABASE_URL,env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+if(!/^http:\/\/(127\.0\.0\.1|localhost):/.test(env.SUPABASE_URL))throw Error('QA integration is allowed only against local Supabase.');
+const base='http://127.0.0.1:3000',tag='V2QA_'+randomBytes(4).toString('hex'),password='QA-local-'+randomBytes(16).toString('hex');
+let adminId,employeeUid,zoneId,doorId,deviceId=tag+'_CAM',empId=tag+'_EMP';
+const cardUid='04'+randomBytes(6).toString('hex').toUpperCase();
+const results=[];const pass=x=>{results.push(x);console.log('PASS',x);};
+const checked=async p=>{const r=await p;if(r.error)throw Error(r.error.message);return r.data;};
+class Client{jar=new Map();async call(path,data,status=200,headers={}){const res=await fetch(base+path,{method:data===undefined?'GET':'POST',headers:{origin:base,cookie:[...this.jar].map(([k,v])=>k+'='+v).join('; '),...(data===undefined?{}:{'content-type':'application/json'}),...headers},...(data===undefined?{}:{body:Buffer.isBuffer(data)?data:JSON.stringify(data)}),signal:AbortSignal.timeout(20000)});for(const c of res.headers.getSetCookie()){const v=c.split(';')[0];this.jar.set(v.slice(0,v.indexOf('=')),v.slice(v.indexOf('=')+1));}const json=await res.json();assert.equal(res.status,status,path+' '+JSON.stringify(json));return json;}}
+const admin=new Client(),employee=new Client(),anon=new Client();
+async function cleanup(){execFileSync(process.execPath,['scripts/cleanup-qa.mjs'],{stdio:'inherit'});}
+
+try{
+ const before=await checked(db.from('gp_employees').select('id')); 
+ const user=await checked(db.auth.admin.createUser({email:tag.toLowerCase()+'@example.test',password,email_confirm:true}));adminId=user.user.id;
+ await checked(db.from('gp_profiles').insert({id:adminId,role:'Admin'}));
+ await anon.call('/api/admin/workspace',undefined,401);pass('Unauthenticated workspace access denied');
+ await admin.call('/api/auth/login',{email:user.user.email,password});pass('Real Supabase login and session cookie');
+ await admin.call('/api/admin/employees',{id:empId,name:'พนักงาน QA เว็บใหม่',email:'',department:'QA',job_title:'QA initial'});pass('Employee creation through the API');
+ await admin.call('/api/admin/employees',{id:empId,name:'ซ้ำ'},409);pass('Duplicate employee rejected');
+ await admin.call('/api/admin/zones',{name:tag});let w=await admin.call('/api/admin/workspace');zoneId=w.zones.find(x=>x.name===tag).id;
+ await admin.call('/api/admin/doors',{name:tag,zone_id:zoneId});w=await admin.call('/api/admin/workspace');doorId=w.doors.find(x=>x.zone_id===zoneId).id;
+ const d=await admin.call('/api/admin/devices',{id:deviceId,name:'เครื่อง QA',door_id:doorId});
+ const enrolled=await anon.call('/api/device/enroll',{device_id:deviceId,enrollment_code:d.enrollment_code});
+ const headers={'X-Device-ID':deviceId,Authorization:'Bearer '+enrolled.device_token};
+ await anon.call('/api/device/enroll',{device_id:deviceId,enrollment_code:d.enrollment_code},403);pass('Device enrollment code is single-use');
+ await anon.call('/api/device/heartbeat',{firmware:'qa-api-fixture',rssi:-65,card_reader_ready:true,camera_ready:true},200,headers);
+ await admin.call('/api/hr/direction',{id:deviceId,direction:'in'});
+ await admin.call('/api/admin/permissions',{employee_id:empId,door_id:doorId,starts:'00:00',ends:'23:59'});
+ await admin.call('/api/admin/permissions',{employee_id:empId,door_id:doorId,starts:'19:00',ends:'08:00'},400);pass('Door permissions and invalid time boundary');
+ await admin.call('/api/hr/credential',{employee_id:empId,method:'card',label:'QA card',uid:cardUid.match(/../g).join(' ')});
+ const scanHeaders={...headers,'X-Request-ID':randomUUID()};
+ let r=await anon.call('/api/device/card',{uid:cardUid.match(/../g).join(':')},200,scanHeaders);assert.equal(r.allowed,false);pass('Disabled authentication method cannot grant access');
+ await admin.call('/api/hr/method',{employee_id:empId,method:'card',enabled:true});
+ const id=randomUUID();r=await anon.call('/api/device/card',{uid:cardUid},200,{...headers,'X-Request-ID':id});assert.equal(r.allowed,true);assert.equal(r.actuation_enabled,false);
+ const again=await anon.call('/api/device/card',{uid:cardUid},200,{...headers,'X-Request-ID':id});assert.equal(again.allowed,true);
+ await anon.call('/api/device/card',{uid:'00000000'},409,{...headers,'X-Request-ID':id});pass('Card normalization, permission decision, retry deduplication, payload conflict');
+ const nfc=await admin.call('/api/hr/credential',{employee_id:empId,method:'nfc',label:'QA HCE'});await admin.call('/api/hr/method',{employee_id:empId,method:'nfc',enabled:true});
+ r=await anon.call('/api/device/nfc',{credential:nfc.nfc_credential},200,{...headers,'X-Request-ID':randomUUID()});assert.equal(r.allowed,true);pass('NFC credential hashes and independent grant');
+ await admin.call('/api/hr/employee-account',{employee_id:empId,email:tag.toLowerCase()+'-employee@example.test',password});w=await admin.call('/api/admin/workspace');employeeUid=w.employees.find(x=>x.id===empId).auth_user_id;
+ await employee.call('/api/auth/login',{email:tag.toLowerCase()+'-employee@example.test',password});
+ await employee.call('/api/admin/workspace',undefined,403);await employee.call('/api/hr/workspace',undefined,403);r=await employee.call('/api/employee/workspace');assert.equal(r.person.id,empId);pass('Employee portal ownership and Admin/HR isolation');
+
+ await employee.call('/api/hr/card-enrollment',{action:'start',employee_id:empId,device_id:deviceId,label:'forbidden'},403);
+ await admin.call('/api/hr/method',{employee_id:empId,method:'card',enabled:false});
+ let ce=await admin.call('/api/hr/card-enrollment',{action:'start',employee_id:empId,device_id:deviceId,label:'บัตรจาก reader QA'});
+ await anon.call('/api/hr/card-enrollment?session='+ce.id,undefined,401);
+ await employee.call('/api/hr/card-enrollment?session='+ce.id,undefined,403);
+ await admin.call('/api/hr/card-enrollment',{action:'start',employee_id:empId,device_id:deviceId,label:'ซ้อน'},409);
+ await admin.call('/api/hr/card-enrollment',{action:'confirm',session:ce.id},409);
+ let heart=await anon.call('/api/device/heartbeat',{firmware:'qa-api-fixture'},200,headers);assert.equal(heart.card_enrollment.id,ce.id);
+ await anon.call('/api/device/card-capture',{session:ce.id,uid:cardUid},409,headers);
+ const freshUid='04'+randomBytes(6).toString('hex').toUpperCase();
+ let countBefore=(await checked(db.from('gp_events').select('id').eq('device_id',deviceId))).length;
+ await anon.call('/api/device/card-capture',{session:ce.id,uid:freshUid},200,headers);
+ await anon.call('/api/device/card-capture',{session:ce.id,uid:freshUid},200,headers);
+ assert.equal((await checked(db.from('gp_events').select('id').eq('device_id',deviceId))).length,countBefore);
+ let cs=await admin.call('/api/hr/card-enrollment?session='+ce.id);assert.equal(cs.status,'captured');assert.equal(cs.last_four,freshUid.slice(-4));assert.equal(cs.credential_hash,undefined);
+ const cf=await Promise.all([admin.call('/api/hr/card-enrollment',{action:'confirm',session:ce.id}),admin.call('/api/hr/card-enrollment',{action:'confirm',session:ce.id})]);assert.equal(cf[0].credential_id,cf[1].credential_id);
+ assert.equal((await checked(db.from('gp_credentials').select('id').eq('credential_hash',createHash('sha256').update('card:'+freshUid).digest('hex')))).length,1);
+ assert.equal((await checked(db.from('gp_methods').select('enabled').eq('employee_id',empId).eq('method','card').single())).enabled,false);
+ ce=await admin.call('/api/hr/card-enrollment',{action:'start',employee_id:empId,device_id:deviceId,label:'ยกเลิก'});await admin.call('/api/hr/card-enrollment',{action:'cancel',session:ce.id});await anon.call('/api/device/card-capture',{session:ce.id,uid:freshUid},409,headers);
+ ce=await admin.call('/api/hr/card-enrollment',{action:'start',employee_id:empId,device_id:deviceId,label:'หมดอายุ'});await checked(db.from('gp_card_enrollments').update({expires_at:new Date(Date.now()-1000).toISOString()}).eq('id',ce.id));await anon.call('/api/device/card-capture',{session:ce.id,uid:freshUid},409,headers);await admin.call('/api/hr/card-enrollment',{action:'confirm',session:ce.id},409);
+ pass('Reader enrollment: ownership, device lock, duplicate rejection, capture without unlock, masked UID, atomic confirmation, expiry and cancellation');
+ await admin.call('/api/hr/method',{employee_id:empId,method:'qr',enabled:true});const qr=await anon.call('/api/device/qr-session',{},200,headers);const token=new URL(qr.url).searchParams.get('qr');
+ const qs=await Promise.allSettled([employee.call('/api/employee/qr',{token}),employee.call('/api/employee/qr',{token})]);assert.ok(qs.some(x=>x.status==='fulfilled'&&x.value.allowed));assert.equal((await employee.call('/api/employee/qr',{token})).allowed,true);
+ const hash=createHash('sha256').update(token).digest('hex');const session=await checked(db.from('gp_qr_sessions').select('request_id').eq('token_hash',hash).single());const ev=await checked(db.from('gp_events').select('id').eq('request_id',session.request_id));assert.equal(ev.length,1);pass('Concurrent QR redemption creates only one event');
+ const q2=await anon.call('/api/device/qr-session',{},200,headers);const t2=new URL(q2.url).searchParams.get('qr');await checked(db.from('gp_qr_sessions').update({expires_at:new Date(Date.now()-1000).toISOString()}).eq('token_hash',createHash('sha256').update(t2).digest('hex')));await employee.call('/api/employee/qr',{token:t2},410);pass('Expired QR rejected');
+ await admin.call('/api/admin/face',Buffer.from('disabled'),410);
+ await anon.call('/api/device/face',Buffer.from('disabled'),410,headers);
+ await admin.call('/api/hr/photo',undefined,410);
+ pass('Face enrollment, recognition and enrollment image access are disabled');
+ await employee.call('/api/employee/leave',{starts:'2026-10-26',ends:'2026-10-26',kind:'personal',reason:'คำขอทดสอบ QA'});pass('Employee leave request stored separately');
+ const workspace=await admin.call('/api/hr/workspace?month=2026-10');assert.ok(workspace.events.some(x=>x.device_id===deviceId));pass('HR attendance workspace reads real events');
+
+ const job=tag+' Lead';await admin.call('/api/admin/employee-edit',{id:empId,name:'พนักงาน QA เว็บใหม่',email:'',department:'QA',job_title:job});
+ const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ const dc=await admin.call('/api/hr/dashboards',{action:'create',name:tag+' Dashboard',department:'QA',job_title:job,view:'both'});
+ let dash=await admin.call('/api/hr/dashboards?start='+today+'&end='+today);const panel=dash.dashboards.find(x=>x.id===dc.id);assert.equal(panel.report.people,1);assert.equal(panel.report.present,1);assert.equal(panel.report.bins.reduce((s,b)=>s+b.count,0),1);
+ await employee.call('/api/hr/dashboards',undefined,403);await employee.call('/api/hr/dashboards',{action:'archive',id:dc.id},403);
+ await admin.call('/api/hr/dashboards?start=2026-01-01&end='+today,undefined,400);
+ await admin.call('/api/hr/dashboards',{action:'update',id:dc.id,name:tag+' Edited',department:'QA',job_title:job,view:'summary'});dash=await admin.call('/api/hr/dashboards');assert.equal(dash.dashboards.find(x=>x.id===dc.id).view,'summary');
+ const otherTag='V2QA_'+randomBytes(4).toString('hex');const otherUser=await checked(db.auth.admin.createUser({email:otherTag.toLowerCase()+'@example.test',password,email_confirm:true}));await checked(db.from('gp_profiles').insert({id:otherUser.user.id,role:'HR'}));const other=new Client();await other.call('/api/auth/login',{email:otherUser.user.email,password});assert.equal((await other.call('/api/hr/dashboards')).dashboards.length,0);await other.call('/api/hr/dashboards',{action:'archive',id:dc.id},404);
+ await admin.call('/api/hr/dashboards',{action:'archive',id:dc.id});assert.ok(!(await admin.call('/api/hr/dashboards')).dashboards.some(x=>x.id===dc.id));await admin.call('/api/hr/dashboards',{action:'restore',id:dc.id});assert.ok((await admin.call('/api/hr/dashboards')).dashboards.some(x=>x.id===dc.id));
+ pass('Job-title updates, saved dashboard filters, first-entry counts, date limits, employee/other-manager isolation and archive/restore');
+ await fs.writeFile('/tmp/gatepass-v2-browser-qa.json',JSON.stringify({tag,adminId,employeeUid,zoneId,doorId,deviceId,empId,email:user.user.email,password,beforeCount:before.length}),{mode:0o600});
+ await fs.mkdir('artifacts',{recursive:true});await fs.writeFile('artifacts/api-verification.json',JSON.stringify({date:new Date().toISOString(),results,hardwareVerified:false},null,2));
+ if(process.env.KEEP_QA==='1'){console.log('QA fixtures retained temporarily for browser validation. Cleanup required.');}else{await cleanup();const after=await checked(db.from('gp_employees').select('id'));assert.equal(after.length,before.length);pass('Original employee count preserved after cleanup');}
+}catch(e){console.error(e.message);await cleanup();process.exitCode=1;}

@@ -1,0 +1,22 @@
+{
+  "date_bangkok": "2026-11-20",
+  "deployment_id": "dpl_HWKc2S6zdebb2s7GnAm1VpM1uZAB",
+  "target": "production",
+  "status": "READY",
+  "primary_url": "https://gatepass-main-phuwitt.vercel.app",
+  "legacy_project_alias": "https://gatepass-prototype.vercel.app",
+  "project_name_internal": "gatepass-prototype",
+  "production_domain_follows_future_releases": true,
+  "next": "16.4.6",
+  "build": "passed",
+  "typecheck": "passed",
+  "tests": 15,
+  "npm_audit_vulnerabilities": 0,
+  "cloud_database_ready": true,
+  "lab_project": "gatepass-lab-phuwitt",
+  "lab_apk": "https://gatepass-lab-phuwitt.vercel.app/GATEPASS-LAB-1.0.0.apk",
+  "real_employee_records_modified": false,
+  "main_mobile_app_built_this_release": false,
+  "physical_actuation_enabled": false,
+  "verified_at_bangkok": "2026-11-20T21:32:11+07:00"
+}

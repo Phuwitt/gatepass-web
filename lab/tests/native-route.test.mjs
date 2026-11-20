@@ -1,0 +1,5 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import handler from '../api/lab.mjs';
+test('Direct /api/lab native POST reads body action even without a rewrite query',async()=>{const previous=globalThis.fetch,env=process.env.LAB_OWNER_CODE;process.env.LAB_OWNER_CODE='x'.repeat(36);let captured;
+globalThis.fetch=async(_url,options)=>{captured=JSON.parse(options.body);return Response.json({token:'a'.repeat(64),employee:{id:'SIM_EMP001'}});};
+const response={statusCode:200,headers:{},setHeader(k,v){this.headers[k]=v;},end(text){this.body=JSON.parse(text);}};
+try{await handler({url:'/api/lab',method:'POST',headers:{host:'gatepass-lab-phuwitt.vercel.app'},body:{action:'pair-redeem',pair:'b'.repeat(64)}},response);assert.equal(response.statusCode,200);assert.equal(captured.action,'pair-redeem');assert.equal(captured.owner,false);assert.equal(response.body.token.length,64);}finally{globalThis.fetch=previous;if(env===undefined)delete process.env.LAB_OWNER_CODE;else process.env.LAB_OWNER_CODE=env;}});

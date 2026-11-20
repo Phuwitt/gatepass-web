@@ -1,0 +1,29 @@
+{
+  "date_bangkok": "2026-11-20",
+  "source_only_secret_scan": "PASS",
+  "files_scanned": 339,
+  "known_private_value_matches": 0,
+  "private_key_or_token_pattern_matches": 0,
+  "web": {
+    "production_build": "PASS",
+    "production_typecheck": "PASS",
+    "production_tests": 15,
+    "lab_tests": 8
+  },
+  "mobile": {
+    "lab_analyze": "PASS",
+    "lab_tests": 4,
+    "employee_analyze": "PASS",
+    "employee_tests": 12
+  },
+  "hardware": {
+    "gatepass-r1-bench": "PASS",
+    "gatepass-r1": "PASS",
+    "pinmap_signals": 32,
+    "gpio_collisions": 0,
+    "host_access_policy_test": "PASS",
+    "hardware_flash": "NOT_RUN",
+    "soldering": "NOT_FINISHED",
+    "physical_hardware": "NOT_TESTED"
+  }
+}

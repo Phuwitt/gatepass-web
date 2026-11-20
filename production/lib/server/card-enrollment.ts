@@ -1,0 +1,4 @@
+import 'server-only';
+import {adminDb} from './supabase';import{ApiError,checked}from'./http';import{credentialHash,normalizeCredential}from'./access';
+export async function pendingCard(device:string){return checked(await adminDb().from('gp_card_enrollments').select('id,expires_at').eq('device_id',device).eq('status','waiting').gt('expires_at',new Date().toISOString()).maybeSingle());}
+export async function captureCard(session:string,device:string,value:string){const uid=normalizeCredential('card',value);const status=checked(await adminDb().rpc('gp_capture_card',{p_session:session,p_device:device,p_hash:credentialHash('card',uid),p_last:uid.slice(-4)}));if(status==='duplicate')throw new ApiError('บัตรนี้ถูกลงทะเบียนแล้ว กรุณาใช้บัตรอื่นหรือตรวจเจ้าของเดิม',409);if(status!=='captured')throw new ApiError('รายการหมดอายุ ถูกยกเลิก หรือได้รับบัตรอื่นแล้ว',409);return{status,last_four:uid.slice(-4),actuation_enabled:false};}

@@ -1,0 +1,25 @@
+{
+  "recorded_at_bangkok": "2026-11-20T18:11:06+07:00",
+  "app_source": "gatepass-lab-mobile",
+  "cloud_source": "gatepass-lab-cloud",
+  "app_version": "1.0.0+1",
+  "android_application_id": "com.gotoradiant.gatepass_lab",
+  "vercel_project": "gatepass-lab-phuwitt",
+  "deployment_id": "dpl_D8MMufnquFDbM6JgHUPWYwRncvUh",
+  "deployed_url": "https://gatepass-lab-phuwitt.vercel.app",
+  "deployment_status": "READY",
+  "framework": "Static HTML + Vercel Node API + Supabase Edge",
+  "supabase_new_objects": [
+    "gp_lab_rooms",
+    "gatepass-lab-gateway"
+  ],
+  "production_employee_data_modified": false,
+  "flutter_analyze": "passed",
+  "flutter_tests": 4,
+  "node_tests": 8,
+  "live_api": "passed",
+  "browser": "passed",
+  "physical_phone": "not tested",
+  "hardware": "not tested",
+  "timestamp_source": "clock tool UTC converted to Asia/Bangkok; execution host clock is out of sync"
+}

@@ -1,0 +1,2 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {workspaceMode} from '../lib/runtime-mode.mjs';
+test('Production deployment stays production even if an old preview flag remains',()=>{assert.equal(workspaceMode({VERCEL_ENV:'production',GATEPASS_PREVIEW:'1'}),'production');assert.equal(workspaceMode({VERCEL_ENV:'preview'}),'preview');assert.equal(workspaceMode({GATEPASS_PREVIEW:'1'}),'preview');assert.equal(workspaceMode({}),'local');});

@@ -1,0 +1,16 @@
+{
+  "origin": "https://gatepass-lab-phuwitt.vercel.app",
+  "status": "passed",
+  "flows": [
+    "Owner login",
+    "Isolated persistent LAB data",
+    "Single-use app pairing",
+    "Native app token profile",
+    "Door QR → mobile API → allowed event",
+    "QR replay rejected",
+    "Admin permission revoke → native deny",
+    "Admin permission restore → native allow"
+  ],
+  "events": 3,
+  "physicalDeviceTested": false
+}

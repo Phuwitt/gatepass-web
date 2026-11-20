@@ -1,0 +1,16 @@
+{
+  "origin": "https://gatepass-main-phuwitt.vercel.app",
+  "mode": "production",
+  "database": true,
+  "database_target": "cloud",
+  "configured": true,
+  "databaseReady": true,
+  "needsSetup": false,
+  "anonymous_admin_status": 401,
+  "cross_origin_login_status": 403,
+  "browser_errors": [],
+  "lab_download_page_status": 200,
+  "physical_actuation_enabled": false,
+  "credentials_or_records_modified": false,
+  "authenticated_login": "not exercised; existing user must sign in with own account"
+}

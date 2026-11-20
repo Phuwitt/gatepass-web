@@ -1,0 +1,7 @@
+export const $=s=>document.querySelector(s);
+export function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+export async function api(path,body){const r=await fetch('/api/'+path,body===undefined?{cache:'no-store'}:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||'ระบบทดสอบไม่พร้อม');return d;}
+export function time(v){return new Intl.DateTimeFormat('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Asia/Bangkok'}).format(new Date(v));}
+export function toast(message,error=false){const el=$('#toast');el.textContent=message;el.classList.toggle('error',error);el.hidden=false;clearTimeout(el._timer);el._timer=setTimeout(()=>el.hidden=true,6000);}
+export function eventsHTML(events){return events.length?events.slice(0,35).map(e=>`<tr><td>${time(e.created_at)}</td><td>${esc(e.employee_name||'ไม่พบผู้ใช้งาน')}<small>${esc(e.employee_id||'—')}</small></td><td>${esc(({card:'บัตร',nfc:'NFC มือถือ',qr:'QR'})[e.method]||e.method)}</td><td><span class="badge ${e.status==='allowed'?'good':'bad'}">${e.status==='allowed'?'อนุญาต':'ปฏิเสธ'}</span></td><td>${esc(e.reason)}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">ยังไม่มีเหตุการณ์ ลองแตะบัตรหรือสแกน QR เพื่อเริ่มทดสอบ</td></tr>';}
+export async function bootstrap(){try{await api('bootstrap');}catch(e){location.href='/login.html?next='+encodeURIComponent(location.pathname);throw e;}}

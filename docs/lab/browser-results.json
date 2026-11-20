@@ -1,0 +1,13 @@
+{
+  "status": "passed",
+  "origin": "https://gatepass-lab-phuwitt.vercel.app",
+  "flows": [
+    "Public login",
+    "Owner enters lab",
+    "3D machine loaded",
+    "Card allow from cloud policy",
+    "Admin creates native pairing QR",
+    "Phone download page layout"
+  ],
+  "pageErrors": []
+}
